@@ -2,35 +2,20 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>クリニック呼び出しシステム</title>
+    <title>呼び出しシステム</title>
     <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f4f8; margin: 0; padding: 20px; color: #333; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f4f8; margin: 0; padding: 20px; color: #333; user-select: none; }
         .main-container { display: flex; gap: 20px; margin-bottom: 20px; }
         .current-call-area { flex: 1; background-color: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; }
-        .title { font-size: 24px; color: #7f8c8d; font-weight: bold; margin-bottom: 10px; }
-        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; line-height: 1.2; }
-        .info-area { width: 300px; display: flex; flex-direction: column; gap: 20px; }
-        .message-box, .wait-time-box { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; flex: 1; }
-        .message-text { font-size: 22px; font-weight: bold; color: #2c3e50; }
-        .wait-time { font-size: 40px; font-weight: bold; color: #2980b9; margin: 10px 0 0 0; }
-        .waiting-list-area { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .waiting-numbers { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; min-height: 80px; }
-        .waiting-ticket { background-color: #ecf0f1; color: #2c3e50; font-size: 30px; font-weight: bold; padding: 15px 30px; border-radius: 8px; cursor: pointer; border: 2px solid #bdc3c7; }
-        .waiting-ticket:hover { background-color: #3498db; color: white; transform: scale(1.05); }
-        .marquee-area { background-color: #34495e; color: white; padding: 15px; font-size: 24px; border-radius: 8px; }
-        .typing-indicator { position: fixed; bottom: 18px; right: 20px; color: rgba(255, 255, 255, 0.4); font-size: 18px; font-weight: bold; pointer-events: none; }
+        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; }
         
-        /* モーダル・テンキー関連 */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
-        .modal-content { background: white; margin: 10% auto; padding: 30px; width: 400px; border-radius: 16px; }
-        .setting-item { margin-bottom: 20px; }
-        .setting-item input { width: 100%; padding: 8px; font-size: 16px; }
+        .waiting-list-area { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); min-height: 200px; }
+        .waiting-ticket { background-color: #ecf0f1; color: #2c3e50; font-size: 24px; font-weight: bold; padding: 15px; border-radius: 8px; cursor: move; display: inline-block; margin: 10px; border: 2px solid #bdc3c7; }
         
-        .hidden-numpad { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 2000; }
-        .numpad { display: grid; grid-template-columns: repeat(3, 60px); gap: 10px; }
-        .numpad button { height: 50px; font-size: 18px; border: none; border-radius: 8px; background: #bdc3c7; color: white; cursor: pointer; }
-        .hidden-trigger { position: fixed; top: 0; right: 0; width: 100px; height: 100px; z-index: 999; cursor: pointer; }
+        /* フローティングテンキー */
+        #numpad { display: none; position: fixed; top: 100px; left: 100px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 3000; cursor: grab; }
+        .numpad-grid { display: grid; grid-template-columns: repeat(3, 50px); gap: 8px; }
+        .numpad button { height: 45px; border: none; border-radius: 6px; background: #95a5a6; color: white; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -38,139 +23,107 @@
 <div class="main-container">
     <div class="current-call-area">
         <div class="title">ただいまのお呼出番号</div>
-        <div class="current-number" id="currentNumber">-- 番</div>
-    </div>
-    <div class="info-area">
-        <div class="message-box">
-            <p class="title">お知らせ</p>
-            <p class="message-text">待合室でお待ちください</p>
-        </div>
-        <div class="wait-time-box">
-            <p class="title">およその待ち時間</p>
-            <p class="wait-time"><span id="waitTime">0</span> 分</p>
-        </div>
+        <div class="current-number" id="currentNumber">000</div>
+        <button onclick="returnToQueue()">呼び出しをリストに戻す</button>
     </div>
 </div>
 
-<div class="waiting-list-area">
-    <div class="title">お待ちの番号（タッチで呼び出し）</div>
-    <div class="waiting-numbers" id="waitingList"></div>
-</div>
+<div class="waiting-list-area" id="waitingList"></div>
 
-<div class="marquee-area">
-    <marquee id="marqueeText">まつい整形外科せぼね・関節クリニックへようこそ。</marquee>
-</div>
+<div class="hidden-trigger" style="position:fixed; top:0; right:0; width:100px; height:100px;" ondblclick="toggleNumpad()"></div>
 
-<div class="hidden-trigger" ondblclick="toggleNumpad()"></div>
-<div id="hiddenNumpad" class="hidden-numpad">
-    <div class="numpad">
+<div id="numpad">
+    <div class="numpad-grid">
         <button onclick="inputNum('1')">1</button><button onclick="inputNum('2')">2</button><button onclick="inputNum('3')">3</button>
         <button onclick="inputNum('4')">4</button><button onclick="inputNum('5')">5</button><button onclick="inputNum('6')">6</button>
         <button onclick="inputNum('7')">7</button><button onclick="inputNum('8')">8</button><button onclick="inputNum('9')">9</button>
         <button onclick="inputNum('0')">0</button>
         <button onclick="clearBuffer()" style="background:#e74c3c;">C</button>
         <button onclick="addToList()" style="background:#2ecc71;">追加</button>
-        <button onclick="callDirect()" style="background:#f39c12;">呼出</button>
-    </div>
-    <p style="text-align:center; margin-top:10px; cursor:pointer;" onclick="toggleNumpad()">閉じる</p>
-</div>
-
-<div id="settingModal" class="modal">
-    <div class="modal-content">
-        <h2>設定画面 (Escで閉じる)</h2>
-        <div class="setting-item">
-            <label>1人あたりの待ち時間(分):</label>
-            <input type="number" id="inputWaitTime" value="5">
-        </div>
-        <div class="setting-item">
-            <label>テロップ内容:</label>
-            <input type="text" id="inputMarquee" value="まつい整形外科せぼね・関節クリニックへようこそ。">
-        </div>
-        <button onclick="saveSettings()">保存して閉じる</button>
+        <button onclick="deleteFromList()" style="background:#95a5a6;">削除</button>
     </div>
 </div>
-
-<div id="typingIndicator" class="typing-indicator"></div>
 
 <script>
     let waitingQueue = [];
     let inputBuffer = "";
-    let config = JSON.parse(localStorage.getItem('clinicConfig')) || { time: 5, marquee: "まつい整形外科せぼね・関節クリニックへようこそ。" };
+    let currentCall = "000";
 
-    function applyConfig() {
-        document.getElementById('marqueeText').innerText = config.marquee;
-        document.getElementById('inputWaitTime').value = config.time;
-        document.getElementById('inputMarquee').value = config.marquee;
+    // 3桁補完処理
+    function formatNum(n) { return n.toString().padStart(3, '0'); }
+
+    function inputNum(n) { 
+        inputBuffer = (inputBuffer + n).slice(-3);
+        updateDisplay();
+    }
+    
+    function addToList() {
+        if(inputBuffer.length === 3) {
+            waitingQueue.push(inputBuffer);
+            inputBuffer = "";
+            updateDisplay();
+        }
+    }
+
+    function deleteFromList() {
+        waitingQueue = waitingQueue.filter(n => n !== inputBuffer);
+        inputBuffer = "";
         updateDisplay();
     }
 
-    function saveSettings() {
-        config.time = document.getElementById('inputWaitTime').value;
-        config.marquee = document.getElementById('inputMarquee').value;
-        localStorage.setItem('clinicConfig', JSON.stringify(config));
-        applyConfig();
-        document.getElementById('settingModal').style.display = 'none';
+    function returnToQueue() {
+        waitingQueue.unshift(currentCall);
+        currentCall = "000";
+        document.getElementById('currentNumber').innerText = currentCall;
+        updateDisplay();
     }
 
-    function toggleNumpad() {
-        const pad = document.getElementById('hiddenNumpad');
-        pad.style.display = (pad.style.display === 'block') ? 'none' : 'block';
-    }
-
-    function inputNum(n) { inputBuffer += n; updateDisplay(); }
-    function clearBuffer() { inputBuffer = ""; updateDisplay(); }
-    function addToList() { if(inputBuffer !== "") { waitingQueue.push(inputBuffer); inputBuffer = ""; updateDisplay(); } }
-    function callDirect() { 
-        if(inputBuffer !== "") { callNumber(inputBuffer); inputBuffer = ""; }
-        else if(waitingQueue.length > 0) { callNumber(waitingQueue[0]); }
+    function callNumber(num) {
+        currentCall = num;
+        document.getElementById('currentNumber').innerText = currentCall;
+        waitingQueue = waitingQueue.filter(n => n !== num);
+        updateDisplay();
     }
 
     function updateDisplay() {
-        const waitingListContainer = document.getElementById('waitingList');
-        waitingListContainer.innerHTML = '';
+        const list = document.getElementById('waitingList');
+        list.innerHTML = '<h3>お待ちの番号（ドラッグで並び替え可）</h3>';
         waitingQueue.forEach(num => {
-            const ticket = document.createElement('div');
-            ticket.className = 'waiting-ticket';
-            ticket.innerText = num;
-            ticket.onclick = () => callNumber(num);
-            waitingListContainer.appendChild(ticket);
+            const el = document.createElement('div');
+            el.className = 'waiting-ticket';
+            el.innerText = num;
+            el.draggable = true;
+            el.onclick = () => callNumber(num);
+            list.appendChild(el);
         });
-        document.getElementById('waitTime').innerText = waitingQueue.length * config.time;
-        document.getElementById('typingIndicator').innerText = inputBuffer !== "" ? "入力中: " + inputBuffer : "";
     }
 
-    function playChime() {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        function playNote(freq, startTime, duration) {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            gain.gain.setValueAtTime(0.5, ctx.currentTime + startTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + startTime + duration);
-            osc.start(ctx.currentTime + startTime); osc.stop(ctx.currentTime + startTime + duration);
+    // ドラッグ＆ドロップ並び替えロジック
+    let dragSrcEl = null;
+    document.addEventListener('dragstart', (e) => { dragSrcEl = e.target; });
+    document.addEventListener('dragover', (e) => { e.preventDefault(); });
+    document.addEventListener('drop', (e) => {
+        if(e.target.className === 'waiting-ticket') {
+            const all = Array.from(document.querySelectorAll('.waiting-ticket'));
+            const from = all.indexOf(dragSrcEl);
+            const to = all.indexOf(e.target);
+            const val = waitingQueue.splice(from, 1)[0];
+            waitingQueue.splice(to, 0, val);
+            updateDisplay();
         }
-        playNote(659.25, 0, 0.6); playNote(523.25, 0.5, 1.0);
-    }
-
-    function callNumber(numToCall) {
-        document.getElementById('currentNumber').innerText = numToCall + " 番";
-        waitingQueue = waitingQueue.filter(num => num.toString() !== numToCall.toString());
-        playChime();
-        updateDisplay();
-    }
-
-    document.addEventListener('keydown', (e) => {
-        if(e.key === 's') document.getElementById('settingModal').style.display = 'block';
-        if(e.key === 'Escape') { document.getElementById('settingModal').style.display = 'none'; document.getElementById('hiddenNumpad').style.display = 'none'; }
-        
-        if (e.key >= '0' && e.key <= '9') { inputBuffer += e.key; updateDisplay(); }
-        if (e.key === 'Backspace') { inputBuffer = inputBuffer.slice(0, -1); updateDisplay(); }
-        if (e.code === 'Enter' || e.code === 'ArrowUp') { addToList(); }
-        if (e.code === 'Space') { callDirect(); }
     });
 
-    applyConfig();
+    // テンキー移動処理
+    const np = document.getElementById('numpad');
+    np.onmousedown = (e) => {
+        let shiftX = e.clientX - np.getBoundingClientRect().left;
+        let shiftY = e.clientY - np.getBoundingClientRect().top;
+        document.onmousemove = (e) => { np.style.left = e.pageX - shiftX + 'px'; np.style.top = e.pageY - shiftY + 'px'; };
+        document.onmouseup = () => { document.onmousemove = null; };
+    };
+
+    function toggleNumpad() { np.style.display = (np.style.display === 'block') ? 'none' : 'block'; }
+    function clearBuffer() { inputBuffer = ""; updateDisplay(); }
 </script>
 </body>
 </html>
