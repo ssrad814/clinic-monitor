@@ -16,7 +16,10 @@
         .title { font-size: 24px; color: #7f8c8d; font-weight: bold; margin-bottom: 10px; }
         
         /* 呼び出し番号のスタイル */
-        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; line-height: 1.2; display: inline-block; cursor: move; padding: 10px 30px; border-radius: 8px; background-color: #fdf2f2; }
+        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; line-height: 1.2; display: inline-block; cursor: grab; padding: 10px 30px; border-radius: 8px; background-color: #fdf2f2; transition: all 0.2s; }
+        .current-number:active { cursor: grabbing; }
+        /* 000の時はドラッグ不可にするスタイル */
+        .current-number.no-drag { cursor: default; background-color: transparent; }
         
         .info-area { width: 350px; display: flex; flex-direction: column; gap: 20px; }
         .message-box, .wait-time-box { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; flex: 1; display: flex; flex-direction: column; justify-content: center; }
@@ -26,7 +29,8 @@
         /* 待ち番号リスト */
         .waiting-list-area { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; min-height: 180px; }
         .waiting-numbers { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; min-height: 120px; width: 100%; border: 3px dashed #bdc3c7; background-color: #fafbfc; border-radius: 16px; padding: 15px; }
-        .waiting-ticket { background-color: #ecf0f1; color: #2c3e50; font-size: 30px; font-weight: bold; padding: 15px 30px; border-radius: 8px; cursor: move; border: 2px solid #bdc3c7; touch-action: none; }
+        .waiting-ticket { background-color: #ecf0f1; color: #2c3e50; font-size: 30px; font-weight: bold; padding: 15px 30px; border-radius: 8px; cursor: grab; border: 2px solid #bdc3c7; touch-action: none; transition: transform 0.1s; }
+        .waiting-ticket:active { cursor: grabbing; }
         
         /* 下部テロップ */
         .marquee-area { background-color: #34495e; color: white; padding: 15px; font-size: 24px; border-radius: 8px; }
@@ -54,7 +58,7 @@
     <div class="current-call-area">
         <div class="title">ただいまのお呼出番号</div>
         <div id="callSource">
-            <div class="current-number" id="currentNumber" data-num="000">000</div>
+            <div class="current-number no-drag" id="currentNumber" data-num="000">000</div>
         </div>
     </div>
     <div class="info-area">
@@ -121,9 +125,7 @@
     let currentCall = "000";
     
     let config = JSON.parse(localStorage.getItem('clinicConfig')) || { 
-        time: 5, 
-        msg: "待合室でお待ちください", 
-        marquee: "まつい整形外科せぼね・関節クリニックへようこそ。" 
+        time: 5, msg: "待合室でお待ちください", marquee: "まつい整形外科せぼね・関節クリニックへようこそ。" 
     };
 
     function applyConfig() {
@@ -144,8 +146,8 @@
         document.getElementById('settingModal').style.display = 'none';
     }
 
-    function inputNum(n) { inputBuffer = (inputBuffer + n).slice(-3); updateDisplay(); }
-    function clearBuffer() { inputBuffer = ""; updateDisplay(); }
+    function inputNum(n) { inputBuffer = (inputBuffer + n).slice(-3); updateInfoPanel(); }
+    function clearBuffer() { inputBuffer = ""; updateInfoPanel(); }
     function padZero(numStr) { return numStr.padStart(3, '0'); }
 
     function addToList() {
@@ -165,14 +167,21 @@
     }
 
     function callNumber(num) {
+        if (num === "000") return;
         currentCall = num;
-        document.getElementById('currentNumber').innerText = currentCall;
-        document.getElementById('currentNumber').setAttribute('data-num', currentCall);
         waitingQueue = waitingQueue.filter(n => n !== num);
         playChime();
         updateDisplay();
     }
 
+    // 【修正点】クリック時のイベントをリスト全体に委譲（フリーズ対策）
+    document.getElementById('waitingList').addEventListener('click', function(e) {
+        if (e.target.classList.contains('waiting-ticket')) {
+            callNumber(e.target.getAttribute('data-num'));
+        }
+    });
+
+    // 画面全体の再描画（テンキーからの追加/削除、呼び出し時のみ実行）
     function updateDisplay() {
         const container = document.getElementById('waitingList');
         container.innerHTML = '';
@@ -182,49 +191,69 @@
             ticket.className = 'waiting-ticket';
             ticket.innerText = num;
             ticket.setAttribute('data-num', num);
-            ticket.addEventListener('click', () => callNumber(num));
             container.appendChild(ticket);
         });
-
-        document.getElementById('waitTime').innerText = waitingQueue.length * config.time;
-        document.getElementById('typingIndicator').innerText = inputBuffer !== "" ? "入力中: " + padZero(inputBuffer) : "";
+        updateInfoPanel();
     }
 
-    // 【バグ修正】呼び出し元から「複製移動（clone）」させることで、元の000が消えないように保護
+    // テキストと状態のみの更新（ドラッグ中・入力中に実行）
+    function updateInfoPanel() {
+        document.getElementById('waitTime').innerText = waitingQueue.length * config.time;
+        document.getElementById('typingIndicator').innerText = inputBuffer !== "" ? "入力中: " + padZero(inputBuffer) : "";
+        
+        const curNumEl = document.getElementById('currentNumber');
+        curNumEl.innerText = currentCall;
+        curNumEl.setAttribute('data-num', currentCall);
+        
+        // 000の時はドラッグできなくする
+        if (currentCall === "000") {
+            curNumEl.classList.add('no-drag');
+        } else {
+            curNumEl.classList.remove('no-drag');
+        }
+    }
+
+    // --- ドラッグ＆ドロップエンジン（フリーズ対策済） ---
+
+    // 呼び出し元の設定
     new Sortable(document.getElementById('callSource'), {
-        group: { name: 'shared', pull: 'clone', put: false }, // 複製（クローン）だけを許可し、吸い込みはさせない
+        group: { name: 'shared', pull: 'clone', put: false },
         animation: 150,
-        sort: false // このエリア内での並び替えは禁止
+        sort: false,
+        filter: '.no-drag', // 000の時は引っ張れないようにロック
+        preventOnFilter: true
     });
 
-    // 待ち番号リスト側のドラッグ＆ドロップ制御
+    // 待ち番号リストの設定
     new Sortable(document.getElementById('waitingList'), {
         group: 'shared',
         animation: 150,
-        // リスト内で並び替え、または呼び出し番号がドロップされた時の処理
-        onEnd: function (evt) {
-            // もし「呼び出し番号エリア」からドロップされた場合
-            if (evt.from.id === 'callSource') {
-                if (currentCall !== "000") {
-                    // ドロップされた位置（evt.newIndex）に現在の呼び出し番号を挿入
-                    if (!waitingQueue.includes(currentCall)) {
-                        waitingQueue.splice(evt.newIndex, 0, currentCall);
-                    }
-                    // 呼び出し番号をリセット
-                    currentCall = "000";
-                    document.getElementById('currentNumber').innerText = currentCall;
-                    document.getElementById('currentNumber').setAttribute('data-num', currentCall);
-                }
-                // クローンされて残った不要なゴミ要素を消去
-                if (evt.item) evt.item.remove();
-            } else {
-                // 通常のリスト内並び替え
-                const tickets = [...document.getElementById('waitingList').querySelectorAll('.waiting-ticket')];
-                waitingQueue = tickets.map(t => t.getAttribute('data-num'));
-            }
-            updateDisplay();
+        // リスト内で順番が入れ替わった時
+        onUpdate: function (evt) {
+            syncQueueFromDOM();
+        },
+        // 上から番号がドロップして戻された時
+        onAdd: function (evt) {
+            // ドロップされた要素（赤文字）をチケットのデザインに強制変身させる
+            evt.item.className = 'waiting-ticket';
+            evt.item.style.cssText = ''; 
+            evt.item.innerText = currentCall;
+            evt.item.setAttribute('data-num', currentCall);
+
+            // 呼び出し番号を000にリセット
+            currentCall = "000";
+            updateInfoPanel(); // 画面を再構築せず、テキストだけ書き換える（フリーズ回避）
+            
+            syncQueueFromDOM();
         }
     });
+
+    // DOMの並び順から配列を再同期する（フリーズ対策の中核）
+    function syncQueueFromDOM() {
+        const tickets = document.querySelectorAll('#waitingList .waiting-ticket');
+        waitingQueue = Array.from(tickets).map(t => t.getAttribute('data-num'));
+        updateInfoPanel();
+    }
 
     function playChime() {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -243,13 +272,9 @@
     // キーボード操作
     document.addEventListener('keydown', (e) => {
         if(e.key.toLowerCase() === 's') { document.getElementById('settingModal').style.display = 'block'; return; }
-        if(e.key === 'Escape') {
-            document.getElementById('settingModal').style.display = 'none';
-            document.getElementById('numpad').style.display = 'none';
-            return;
-        }
+        if(e.key === 'Escape') { document.getElementById('settingModal').style.display = 'none'; document.getElementById('numpad').style.display = 'none'; return; }
         if (e.key >= '0' && e.key <= '9') { inputNum(e.key); return; }
-        if (e.key === 'Backspace') { inputBuffer = inputBuffer.slice(0, -1); updateDisplay(); return; }
+        if (e.key === 'Backspace') { inputBuffer = inputBuffer.slice(0, -1); updateInfoPanel(); return; }
         if (e.code === 'Enter' || e.code === 'ArrowUp') { e.preventDefault(); addToList(); }
         if (e.code === 'Space') {
             e.preventDefault(); 
