@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>呼び出しシステム</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f4f8;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .current-call-area {
+            flex: 1;
+            background-color: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        .title {
+            font-size: 24px;
+            color: #7f8c8d;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .current-number {
+            font-size: 120px;
+            font-weight: bold;
+            color: #e74c3c;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .info-area {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message-box, .wait-time-box {
+            background-color: white;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            text-align: center;
+            flex: 1;
+        }
+
+        .message-text {
+            font-size: 22px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .wait-time {
+            font-size: 40px;
+            font-weight: bold;
+            color: #2980b9;
+            margin: 10px 0 0 0;
+        }
+
+        .waiting-list-area {
+            background-color: white;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .waiting-numbers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+            min-height: 80px;
+        }
+
+        .waiting-ticket {
+            background-color: #ecf0f1;
+            color: #2c3e50;
+            font-size: 30px;
+            font-weight: bold;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid #bdc3c7;
+            transition: all 0.2s;
+        }
+
+        .waiting-ticket:hover {
+            background-color: #3498db;
+            color: white;
+            border-color: #2980b9;
+            transform: scale(1.05);
+        }
+
+        .marquee-area {
+            background-color: #34495e;
+            color: white;
+            padding: 15px;
+            font-size: 24px;
+            border-radius: 8px;
+        }
+
+        .typing-indicator {
+            position: fixed;
+            bottom: 18px;
+            right: 20px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <div class="current-call-area">
+        <div class="title">ただいまのお呼出番号</div>
+        <div class="current-number" id="currentNumber">-- 番</div>
+    </div>
+    <div class="info-area">
+        <div class="message-box">
+            <p class="title">お知らせ</p>
+            <p class="message-text">待合室でお待ちください</p>
+        </div>
+        <div class="wait-time-box">
+            <p class="title">およその待ち時間</p>
+            <p class="wait-time"><span id="waitTime">0</span> 分</p>
+        </div>
+    </div>
+</div>
+
+<div class="waiting-list-area">
+    <div class="title">お待ちの番号（タッチで呼び出し）</div>
+    <div class="waiting-numbers" id="waitingList"></div>
+</div>
+
+<div class="marquee-area">
+    <marquee>まつい整形外科せぼね・関節クリニックへようこそ。本日はMRI検査等で順番が前後する場合がございます。あらかじめご了承ください。</marquee>
+</div>
+
+<div id="typingIndicator" class="typing-indicator"></div>
+
+<script>
+    let waitingQueue = [];
+    const TIME_PER_PATIENT = 5; 
+    let inputBuffer = "";
+
+    const currentNumberDisplay = document.getElementById('currentNumber');
+    const waitingListContainer = document.getElementById('waitingList');
+    const waitTimeDisplay = document.getElementById('waitTime');
+    const typingIndicator = document.getElementById('typingIndicator');
+
+    function updateDisplay() {
+        waitingListContainer.innerHTML = '';
+        waitingQueue.forEach(num => {
+            const ticket = document.createElement('div');
+            ticket.className = 'waiting-ticket';
+            ticket.innerText = num;
+            ticket.onclick = () => callNumber(num);
+            waitingListContainer.appendChild(ticket);
+        });
+        const waitTime = waitingQueue.length * TIME_PER_PATIENT;
+        waitTimeDisplay.innerText = waitTime;
+        typingIndicator.innerText = inputBuffer !== "" ? "入力中: " + inputBuffer : "";
+    }
+
+    function playChime() {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        function playNote(freq, startTime, duration) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.5, ctx.currentTime + startTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + startTime + duration);
+            osc.start(ctx.currentTime + startTime);
+            osc.stop(ctx.currentTime + startTime + duration);
+        }
+        playNote(659.25, 0, 0.6);
+        playNote(523.25, 0.5, 1.0);
+    }
+
+    function callNumber(numToCall) {
+        currentNumberDisplay.innerText = numToCall + " 番";
+        waitingQueue = waitingQueue.filter(num => num.toString() !== numToCall.toString());
+        playChime();
+        updateDisplay();
+    }
+
+    function callNextNumber() {
+        if (waitingQueue.length > 0) {
+            callNumber(waitingQueue[0]);
+        }
+    }
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key >= '0' && event.key <= '9') {
+            inputBuffer += event.key;
+            updateDisplay();
+            return;
+        }
+        if (event.key === 'Backspace') {
+            inputBuffer = inputBuffer.slice(0, -1);
+            updateDisplay();
+            return;
+        }
+        if (event.key === 'Escape') {
+            inputBuffer = "";
+            updateDisplay();
+            return;
+        }
+        if (event.code === 'Enter' || event.code === 'ArrowUp') {
+            event.preventDefault();
+            if (inputBuffer !== "") {
+                waitingQueue.push(inputBuffer);
+                inputBuffer = "";
+                updateDisplay();
+            }
+        }
+        if (event.code === 'Space') {
+            event.preventDefault(); 
+            if (inputBuffer !== "") {
+                callNumber(inputBuffer);
+                inputBuffer = "";
+                updateDisplay();
+            } else {
+                callNextNumber();
+            }
+        }
+    });
+
+    updateDisplay();
+</script>
+
+</body>
+</html>
