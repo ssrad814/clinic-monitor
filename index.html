@@ -174,14 +174,12 @@
         updateDisplay();
     }
 
-    // 【修正点】クリック時のイベントをリスト全体に委譲（フリーズ対策）
     document.getElementById('waitingList').addEventListener('click', function(e) {
         if (e.target.classList.contains('waiting-ticket')) {
             callNumber(e.target.getAttribute('data-num'));
         }
     });
 
-    // 画面全体の再描画（テンキーからの追加/削除、呼び出し時のみ実行）
     function updateDisplay() {
         const container = document.getElementById('waitingList');
         container.innerHTML = '';
@@ -196,59 +194,55 @@
         updateInfoPanel();
     }
 
-    // テキストと状態のみの更新（ドラッグ中・入力中に実行）
     function updateInfoPanel() {
         document.getElementById('waitTime').innerText = waitingQueue.length * config.time;
         document.getElementById('typingIndicator').innerText = inputBuffer !== "" ? "入力中: " + padZero(inputBuffer) : "";
         
         const curNumEl = document.getElementById('currentNumber');
-        curNumEl.innerText = currentCall;
-        curNumEl.setAttribute('data-num', currentCall);
-        
-        // 000の時はドラッグできなくする
-        if (currentCall === "000") {
-            curNumEl.classList.add('no-drag');
-        } else {
-            curNumEl.classList.remove('no-drag');
+        if(curNumEl) {
+            curNumEl.innerText = currentCall;
+            curNumEl.setAttribute('data-num', currentCall);
+            
+            if (currentCall === "000") {
+                curNumEl.classList.add('no-drag');
+            } else {
+                curNumEl.classList.remove('no-drag');
+            }
         }
     }
 
-    // --- ドラッグ＆ドロップエンジン（フリーズ対策済） ---
+    // --- ドラッグ＆ドロップエンジン ---
 
-    // 呼び出し元の設定
     new Sortable(document.getElementById('callSource'), {
         group: { name: 'shared', pull: 'clone', put: false },
         animation: 150,
         sort: false,
-        filter: '.no-drag', // 000の時は引っ張れないようにロック
+        filter: '.no-drag',
         preventOnFilter: true
     });
 
-    // 待ち番号リストの設定
     new Sortable(document.getElementById('waitingList'), {
         group: 'shared',
         animation: 150,
-        // リスト内で順番が入れ替わった時
         onUpdate: function (evt) {
             syncQueueFromDOM();
         },
-        // 上から番号がドロップして戻された時
         onAdd: function (evt) {
-            // ドロップされた要素（赤文字）をチケットのデザインに強制変身させる
-            evt.item.className = 'waiting-ticket';
+            // 【修正】複製された要素のIDや不要なクラスを完全に剥がす（バグ防止）
+            evt.item.removeAttribute('id');
+            evt.item.classList.remove('current-number', 'no-drag');
+            evt.item.classList.add('waiting-ticket');
             evt.item.style.cssText = ''; 
             evt.item.innerText = currentCall;
             evt.item.setAttribute('data-num', currentCall);
 
-            // 呼び出し番号を000にリセット
             currentCall = "000";
-            updateInfoPanel(); // 画面を再構築せず、テキストだけ書き換える（フリーズ回避）
+            updateInfoPanel(); 
             
             syncQueueFromDOM();
         }
     });
 
-    // DOMの並び順から配列を再同期する（フリーズ対策の中核）
     function syncQueueFromDOM() {
         const tickets = document.querySelectorAll('#waitingList .waiting-ticket');
         waitingQueue = Array.from(tickets).map(t => t.getAttribute('data-num'));
@@ -269,7 +263,6 @@
         playNote(659.25, 0, 0.6); playNote(523.25, 0.5, 1.0);
     }
 
-    // キーボード操作
     document.addEventListener('keydown', (e) => {
         if(e.key.toLowerCase() === 's') { document.getElementById('settingModal').style.display = 'block'; return; }
         if(e.key === 'Escape') { document.getElementById('settingModal').style.display = 'none'; document.getElementById('numpad').style.display = 'none'; return; }
@@ -288,7 +281,6 @@
         pad.style.display = (pad.style.display === 'block') ? 'none' : 'block';
     }
 
-    // マウス・タッチ両対応のフローティング処理
     const np = document.getElementById('numpad');
     const header = document.getElementById('numpadHeader');
 
