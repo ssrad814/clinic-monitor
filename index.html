@@ -13,11 +13,10 @@
         .main-container { display: flex; gap: 20px; margin-bottom: 20px; }
         .current-call-area { flex: 1; background-color: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 320px; }
         
-        /* ドロップ領域としての見た目（点線枠） */
-        .drop-zone { border: 3px dashed #bdc3c7; background-color: #fafbfc; border-radius: 16px; min-height: 100px; padding: 10px; display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; align-items: center; }
-        
         .title { font-size: 24px; color: #7f8c8d; font-weight: bold; margin-bottom: 10px; }
-        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; line-height: 1.2; display: inline-block; cursor: move; }
+        
+        /* 呼び出し番号のスタイル */
+        .current-number { font-size: 120px; font-weight: bold; color: #e74c3c; margin: 0; line-height: 1.2; display: inline-block; cursor: move; padding: 10px 30px; border-radius: 8px; background-color: #fdf2f2; }
         
         .info-area { width: 350px; display: flex; flex-direction: column; gap: 20px; }
         .message-box, .wait-time-box { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; flex: 1; display: flex; flex-direction: column; justify-content: center; }
@@ -26,7 +25,7 @@
         
         /* 待ち番号リスト */
         .waiting-list-area { background-color: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; min-height: 180px; }
-        .waiting-numbers { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; min-height: 120px; width: 100%; }
+        .waiting-numbers { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; min-height: 120px; width: 100%; border: 3px dashed #bdc3c7; background-color: #fafbfc; border-radius: 16px; padding: 15px; }
         .waiting-ticket { background-color: #ecf0f1; color: #2c3e50; font-size: 30px; font-weight: bold; padding: 15px 30px; border-radius: 8px; cursor: move; border: 2px solid #bdc3c7; touch-action: none; }
         
         /* 下部テロップ */
@@ -54,7 +53,7 @@
 <div class="main-container">
     <div class="current-call-area">
         <div class="title">ただいまのお呼出番号</div>
-        <div id="callContainer" class="drop-zone" style="border:none; background:transparent;">
+        <div id="callSource">
             <div class="current-number" id="currentNumber" data-num="000">000</div>
         </div>
     </div>
@@ -71,8 +70,8 @@
 </div>
 
 <div class="waiting-list-area">
-    <div class="title">お待ちの番号（ドラッグで並び替え・枠外からドロップで戻す）</div>
-    <div class="waiting-numbers drop-zone" id="waitingList"></div>
+    <div class="title">お待ちの番号（ドラッグで並び替え・上の番号をここにドロップで戻す）</div>
+    <div class="waiting-numbers" id="waitingList"></div>
 </div>
 
 <div class="marquee-area">
@@ -166,7 +165,6 @@
     }
 
     function callNumber(num) {
-        if (num === "000") return;
         currentCall = num;
         document.getElementById('currentNumber').innerText = currentCall;
         document.getElementById('currentNumber').setAttribute('data-num', currentCall);
@@ -175,7 +173,6 @@
         updateDisplay();
     }
 
-    // 画面表示の更新
     function updateDisplay() {
         const container = document.getElementById('waitingList');
         container.innerHTML = '';
@@ -185,8 +182,6 @@
             ticket.className = 'waiting-ticket';
             ticket.innerText = num;
             ticket.setAttribute('data-num', num);
-            
-            // タップ（クリック）で呼び出し
             ticket.addEventListener('click', () => callNumber(num));
             container.appendChild(ticket);
         });
@@ -195,37 +190,39 @@
         document.getElementById('typingIndicator').innerText = inputBuffer !== "" ? "入力中: " + padZero(inputBuffer) : "";
     }
 
-    // 【超重要】タッチパネル対応のドラッグ＆ドロップエンジン（SortableJS）の初期化
-    const listSortable = new Sortable(document.getElementById('waitingList'), {
-        group: 'shared', // 呼出エリアと連携
+    // 【バグ修正】呼び出し元から「複製移動（clone）」させることで、元の000が消えないように保護
+    new Sortable(document.getElementById('callSource'), {
+        group: { name: 'shared', pull: 'clone', put: false }, // 複製（クローン）だけを許可し、吸い込みはさせない
         animation: 150,
-        ghostClass: 'waiting-ticket-dragging',
-        // 並び替えが終わったら配列を更新
-        onEnd: function () {
-            const tickets = [...document.getElementById('waitingList').querySelectorAll('.waiting-ticket')];
-            waitingQueue = tickets.map(t => t.getAttribute('data-num'));
-            updateDisplay();
-        }
+        sort: false // このエリア内での並び替えは禁止
     });
 
-    const callSortable = new Sortable(document.getElementById('callContainer'), {
+    // 待ち番号リスト側のドラッグ＆ドロップ制御
+    new Sortable(document.getElementById('waitingList'), {
         group: 'shared',
         animation: 150,
-        // 呼び出し番号エリアに「お待ちの番号」がドロップされたら呼び出す
-        onAdd: function (evt) {
-            const num = evt.item.getAttribute('data-num');
-            evt.item.remove(); // ドロップされた一時的な要素を削除
-            callNumber(num);
-        },
-        // 呼び出し番号（000）がお待ちのリストにドロップされたら戻す
-        onRemove: function (evt) {
-            if (currentCall !== "000") {
-                waitingQueue.unshift(currentCall); // 先頭に戻す
-                currentCall = "000";
-                document.getElementById('currentNumber').innerText = currentCall;
-                document.getElementById('currentNumber').setAttribute('data-num', currentCall);
-                updateDisplay();
+        // リスト内で並び替え、または呼び出し番号がドロップされた時の処理
+        onEnd: function (evt) {
+            // もし「呼び出し番号エリア」からドロップされた場合
+            if (evt.from.id === 'callSource') {
+                if (currentCall !== "000") {
+                    // ドロップされた位置（evt.newIndex）に現在の呼び出し番号を挿入
+                    if (!waitingQueue.includes(currentCall)) {
+                        waitingQueue.splice(evt.newIndex, 0, currentCall);
+                    }
+                    // 呼び出し番号をリセット
+                    currentCall = "000";
+                    document.getElementById('currentNumber').innerText = currentCall;
+                    document.getElementById('currentNumber').setAttribute('data-num', currentCall);
+                }
+                // クローンされて残った不要なゴミ要素を消去
+                if (evt.item) evt.item.remove();
+            } else {
+                // 通常のリスト内並び替え
+                const tickets = [...document.getElementById('waitingList').querySelectorAll('.waiting-ticket')];
+                waitingQueue = tickets.map(t => t.getAttribute('data-num'));
             }
+            updateDisplay();
         }
     });
 
